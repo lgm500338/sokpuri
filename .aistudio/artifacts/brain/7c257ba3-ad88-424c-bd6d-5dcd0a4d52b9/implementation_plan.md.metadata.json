@@ -1,0 +1,6 @@
+{
+  "summary": "Updated implementation plan to start in Open Arena mode by default (with Glass Tank Lab selectable via top bar and weapon drawer buttons), shrink the open-arena dummy to 60% size with unpredictable jumping and direction changes, and add a full Firearms & Heavy Weapons category (Machine Gun auto-fire on hold, Shotgun/Bazooka knockback blast, Sniper/Laser piercing beam, and Freeze/Paintball special guns) with accuracy hit detection.",
+  "updatedAt": "2026-11-06T01:17:31.516929526Z",
+  "requestFeedback": true,
+  "userFacing": true
+}
