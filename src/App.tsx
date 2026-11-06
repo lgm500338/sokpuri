@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Hammer, Flame, RotateCcw, Globe } from 'lucide-react';
 import { DummySandbox } from './components/DummySandbox';
 import { VentingPaper } from './components/VentingPaper';
@@ -18,9 +18,13 @@ export default function App() {
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [sessionResetKey, setSessionResetKey] = useState<number>(0);
 
-  // Auto-detect portrait screen (height > width) and automatically rotate 90deg into true horizontal landscape mode!
-  const [isPortraitScreen, setIsPortraitScreen] = useState<boolean>(false);
-  const [manualRotateOverride, setManualRotateOverride] = useState<boolean | null>(null);
+  // 휴대폰 방향을 그대로 따라갑니다: 가로로 들면 가로 배치, 세우면 세로 배치.
+  // "가로회전" 버튼을 켜면 세로로 들어도 화면을 90도 돌려 가로 배치로 고정합니다.
+  const [isPortraitScreen, setIsPortraitScreen] = useState<boolean>(
+    () => typeof window !== 'undefined' && window.innerHeight > window.innerWidth
+  );
+  const [forceLandscape, setForceLandscape] = useState<boolean>(false);
+  const [isOrientationFading, setIsOrientationFading] = useState<boolean>(false);
 
   useEffect(() => {
     const checkOrientation = () => {
@@ -31,8 +35,19 @@ export default function App() {
     return () => window.removeEventListener('resize', checkOrientation);
   }, []);
 
-  const effectiveRotatedLandscape =
-    manualRotateOverride !== null ? manualRotateOverride : isPortraitScreen;
+  const effectiveRotatedLandscape = forceLandscape && isPortraitScreen;
+  const isPortraitLayout = isPortraitScreen && !effectiveRotatedLandscape;
+
+  // 가로 ↔ 세로가 바뀌는 순간 살짝 페이드
+  const layoutKey = isPortraitLayout ? 'portrait' : 'landscape';
+  const prevLayoutKeyRef = useRef(layoutKey);
+  useEffect(() => {
+    if (prevLayoutKeyRef.current === layoutKey) return;
+    prevLayoutKeyRef.current = layoutKey;
+    setIsOrientationFading(true);
+    const t = window.setTimeout(() => setIsOrientationFading(false), 60);
+    return () => window.clearTimeout(t);
+  }, [layoutKey]);
 
   const [stats, setStats] = useState<SessionStats>({
     totalHits: 0,
@@ -75,8 +90,8 @@ export default function App() {
     >
       {/* Wrapper that automatically rotates 90 degrees into Landscape when on a portrait screen */}
       <div
-        style={
-          effectiveRotatedLandscape
+        style={{
+          ...(effectiveRotatedLandscape
             ? {
                 position: 'fixed',
                 top: '50%',
@@ -89,8 +104,10 @@ export default function App() {
             : {
                 width: '100vw',
                 height: '100vh',
-              }
-        }
+              }),
+          opacity: isOrientationFading ? 0 : 1,
+          transition: isOrientationFading ? 'none' : 'opacity 320ms ease-out',
+        }}
       >
         <DummySandbox
           stats={stats}
@@ -100,11 +117,8 @@ export default function App() {
           isMuted={isMuted}
           onToggleMute={handleToggleMute}
           isRotatedLandscape={effectiveRotatedLandscape}
-          onToggleRotateLock={() =>
-            setManualRotateOverride((prev) =>
-              prev === null ? !isPortraitScreen : !prev
-            )
-          }
+          isPortraitLayout={isPortraitLayout}
+          onToggleRotateLock={() => setForceLandscape((prev) => !prev)}
           onOpenPaperModal={() => setActiveModal('paper')}
         />
       </div>

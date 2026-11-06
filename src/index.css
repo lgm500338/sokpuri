@@ -61,3 +61,31 @@
   animation: float-up-fade 650ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+
+/* 욕·일갈 문구: 크게 튀어나와 2.5초간 머문 뒤 천천히 사라짐 */
+@keyframes shout-pop {
+  0% { opacity: 0; transform: scale(0.4) rotate(-6deg); }
+  10% { opacity: 1; transform: scale(1.18) rotate(2deg); }
+  18% { transform: scale(1) rotate(-1deg); }
+  75% { opacity: 1; transform: translate3d(0, -10px, 0) scale(1); }
+  100% { opacity: 0; transform: translate3d(0, -40px, 0) scale(0.96); }
+}
+.animate-shout-pop {
+  animation: shout-pop 2500ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* 토마토 / 케이크 투사체 */
+@keyframes throw-fly {
+  from { left: var(--fx); top: var(--fy); }
+  to { left: var(--tx); top: var(--ty); }
+}
+.animate-throw-fly {
+  animation: throw-fly 200ms cubic-bezier(0.3, 0.6, 0.6, 1) forwards;
+}
+@keyframes throw-spin {
+  from { rotate: 0deg; scale: 0.8; }
+  to { rotate: 540deg; scale: 1.15; }
+}
+.animate-throw-spin {
+  animation: throw-spin 200ms linear forwards;
+}

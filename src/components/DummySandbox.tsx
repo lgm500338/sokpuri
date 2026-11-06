@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { BearFigure, BunnyFigure, CrashDummyFigure, ElectrocutedEars } from './TargetCharacters';
+import { BasementRoom, roomGeometry } from './BasementRoom';
 import {
   Flame,
   RotateCcw,
@@ -412,6 +413,8 @@ interface DummySandboxProps {
   isMuted: boolean;
   onToggleMute: () => void;
   isRotatedLandscape: boolean;
+  /** 세로로 든 휴대폰에서 세로 배치로 보여줄 때 true */
+  isPortraitLayout: boolean;
   onToggleRotateLock: () => void;
   onOpenPaperModal: () => void;
 }
@@ -941,6 +944,7 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
   isMuted,
   onToggleMute,
   isRotatedLandscape,
+  isPortraitLayout,
   onToggleRotateLock,
   onOpenPaperModal,
 }) => {
@@ -1001,6 +1005,12 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
     isPanicking: false,
   });
 
+  // 토마토 & 케이크 투척: 번갈아 던지기 + 날아가는 투사체
+  const throwToggleRef = useRef<boolean>(false);
+  const [thrownItems, setThrownItems] = useState<
+    { id: string; kind: 'tomato' | 'cake'; fx: number; fy: number; tx: number; ty: number }[]
+  >([]);
+
   const [weaponSwing, setWeaponSwing] = useState<{
     active: boolean;
     x: number;
@@ -1027,6 +1037,10 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
   const isChainedRef = useRef<boolean>(isChainedHanging);
   const waterLevelRef = useRef<number>(waterLevel);
   const weaponSideRef = useRef<'right' | 'left'>(weaponSide);
+  const portraitLayoutRef = useRef<boolean>(isPortraitLayout);
+  useEffect(() => {
+    portraitLayoutRef.current = isPortraitLayout;
+  }, [isPortraitLayout]);
 
   useEffect(() => {
     weaponSideRef.current = weaponSide;
@@ -1115,8 +1129,9 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
       const canvas = canvasRef.current;
       if (!canvas) return;
       const side = weaponSideRef.current;
-      const startX = canvas.width * (side === 'right' ? 0.84 : 0.16);
-      const startY = canvas.height * 0.52;
+      const portrait = portraitLayoutRef.current;
+      const startX = canvas.width * (portrait ? 0.5 : side === 'right' ? 0.84 : 0.16);
+      const startY = canvas.height * (portrait ? 0.76 : 0.52);
       const endX = (targetPctX / 100) * canvas.width;
       const endY = (targetPctY / 100) * canvas.height;
 
@@ -1662,12 +1677,43 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
 
       const ph = physRef.current;
 
+      // 토마토 & 케이크: 던질 때마다 번갈아 가며 토마토 / 케이크
+      let weapon = selectedWeapon;
+      if (selectedWeapon.id === 'rotten_tomato' && !customShoutText) {
+        throwToggleRef.current = !throwToggleRef.current;
+        const kind: 'tomato' | 'cake' = throwToggleRef.current ? 'tomato' : 'cake';
+        if (kind === 'cake') {
+          weapon = {
+            ...selectedWeapon,
+            hitWords: ['생크림 범벅!!', '케이크 철퍽!!', '달콤한 복수!!', '크림 폭탄!!'],
+            hitWordsEn: ['CAKE IN FACE!!', 'CREAMED!!', 'SWEET REVENGE!!', 'PIE BOMB!!'],
+            particleColors: ['#FFFBEB', '#FBCFE8', '#FDE68A', '#F472B6'],
+            markType: 'cream',
+          };
+        }
+        const id = `${Date.now()}-${Math.random()}`;
+        setThrownItems((prev) => [
+          ...prev.slice(-5),
+          {
+            id,
+            kind,
+            fx: portraitLayoutRef.current ? 50 : weaponSide === 'right' ? 88 : 12,
+            fy: portraitLayoutRef.current ? 80 : 54,
+            tx: hitPctX,
+            ty: hitPctY,
+          },
+        ]);
+        window.setTimeout(() => {
+          setThrownItems((prev) => prev.filter((t) => t.id !== id));
+        }, 420);
+      }
+
       setIsFiringRecoil(true);
       setTimeout(() => setIsFiringRecoil(false), 90);
 
       if (
-        selectedWeapon.specialEffect === 'flood_electrocute' ||
-        selectedWeapon.specialEffect === 'electrocute'
+        weapon.specialEffect === 'flood_electrocute' ||
+        weapon.specialEffect === 'electrocute'
       ) {
         if (isTankModeRef.current) {
           setWireTip({ x: 54, y: 58 });
@@ -1685,22 +1731,22 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
         }
       }
 
-      if (selectedWeapon.category === 'firearms' && !customShoutText) {
-        spawnBulletTracer(hitPctX, hitPctY, selectedWeapon);
+      if (weapon.category === 'firearms' && !customShoutText) {
+        spawnBulletTracer(hitPctX, hitPctY, weapon);
       }
 
       if (!isTankModeRef.current && !customShoutText) {
         const dx = Math.abs(hitPctX - ph.x);
         const dy = Math.abs(hitPctY - ph.y);
         const isWideBlast =
-          selectedWeapon.specialEffect === 'shotgun_spread' ||
-          selectedWeapon.specialEffect === 'bazooka_blast';
+          weapon.specialEffect === 'shotgun_spread' ||
+          weapon.specialEffect === 'bazooka_blast';
         const hitRadiusX = isWideBlast ? 20 : 12.5;
         const hitRadiusY = isWideBlast ? 26 : 19;
 
         if (dx > hitRadiusX || dy > hitRadiusY) {
-          soundEngine.play(selectedWeapon.sound);
-          spawnParticlesAtPct(hitPctX, hitPctY, selectedWeapon, 0.55);
+          soundEngine.play(weapon.sound);
+          spawnParticlesAtPct(hitPctX, hitPctY, weapon, 0.55);
           setWeaponSwing({
             active: true,
             x: hitPctX,
@@ -1730,13 +1776,13 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
         }
       }
 
-      if (selectedWeapon.specialEffect === 'seal_tape') {
+      if (weapon.specialEffect === 'seal_tape') {
         setMouthSeal('duct_tape');
         soundEngine.play('tape_seal');
-      } else if (selectedWeapon.specialEffect === 'seal_zipper') {
+      } else if (weapon.specialEffect === 'seal_zipper') {
         setMouthSeal('zipper');
         soundEngine.play('zipper_lock');
-      } else if (selectedWeapon.specialEffect === 'freeze_ray') {
+      } else if (weapon.specialEffect === 'freeze_ray') {
         soundEngine.play('freeze_blast');
         ph.frozenUntil = performance.now() + 3200;
         setIsFrozen(true);
@@ -1748,16 +1794,16 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
         soundEngine.play('shout_slam');
         soundEngine.play('shatter_ceramic');
       } else {
-        soundEngine.play(selectedWeapon.sound);
+        soundEngine.play(weapon.sound);
       }
 
       spawnParticlesAtPct(
         ph.x,
         ph.y - 4,
-        selectedWeapon,
+        weapon,
         customShoutText ? 1.6 : 1.15
       );
-      triggerShake(selectedWeapon.damage >= 25 || Boolean(customShoutText));
+      triggerShake(weapon.damage >= 25 || Boolean(customShoutText));
 
       setWeaponSwing({
         active: true,
@@ -1776,20 +1822,20 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
           ? -1
           : 1;
 
-      if (selectedWeapon.specialEffect === 'freeze_ray') {
+      if (weapon.specialEffect === 'freeze_ray') {
         ph.vx = 0;
         ph.vy = 0;
       } else {
         const knockbackMult =
-          selectedWeapon.specialEffect === 'bazooka_blast'
+          weapon.specialEffect === 'bazooka_blast'
             ? 4.2
-            : selectedWeapon.specialEffect === 'shotgun_spread'
+            : weapon.specialEffect === 'shotgun_spread'
             ? 3.4
             : isTankModeRef.current
             ? 1.4
             : 2.5;
         ph.vx = launchDir * knockbackMult;
-        ph.vy = -(selectedWeapon.specialEffect === 'bazooka_blast'
+        ph.vy = -(weapon.specialEffect === 'bazooka_blast'
           ? 3.8
           : isTankModeRef.current
           ? 1.5
@@ -1807,7 +1853,7 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
         y: 18 + Math.random() * 62,
         rotation: Math.random() * 360,
         scale: 0.85 + Math.random() * 0.4,
-        type: customShoutText ? 'crack' : selectedWeapon.markType,
+        type: customShoutText ? 'crack' : weapon.markType,
       };
       setDamageMarks((prev) => [...prev.slice(-28), newMark]);
 
@@ -1819,13 +1865,13 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
       }, 2800);
 
       setRageGauge((prev) =>
-        Math.min(100, prev + (customShoutText ? 22 : selectedWeapon.rageGain))
+        Math.min(100, prev + (customShoutText ? 22 : weapon.rageGain))
       );
       setDummyDamagePercent((prev) =>
-        Math.min(100, prev + Math.ceil(selectedWeapon.damage / 4))
+        Math.min(100, prev + Math.ceil(weapon.damage / 4))
       );
 
-      const wordsPool = isKo ? selectedWeapon.hitWords : selectedWeapon.hitWordsEn;
+      const wordsPool = isKo ? weapon.hitWords : weapon.hitWordsEn;
       const randomWord =
         mouthSeal !== 'none' && Math.random() < 0.45
           ? isKo
@@ -1840,10 +1886,10 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
           x: ph.x,
           y: Math.max(14, ph.y - 14),
           text: customShoutText ? `"${customShoutText}"` : randomWord,
-          subText: `-${customShoutText ? 99 : selectedWeapon.damage} HP`,
+          subText: `-${customShoutText ? 99 : weapon.damage} HP`,
           color: customShoutText
             ? '#F43F5E'
-            : selectedWeapon.particleColors[0] || '#F97316',
+            : weapon.particleColors[0] || '#F97316',
           isShout: Boolean(customShoutText),
         },
       ]);
@@ -1853,7 +1899,7 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
         totalHits: prev.totalHits + 1,
         maxCombo: Math.max(prev.maxCombo, newCombo),
         objectsShattered:
-          selectedWeapon.category === 'shatter'
+          weapon.category === 'shatter'
             ? prev.objectsShattered + 1
             : prev.objectsShattered,
         shoutsThrown: customShoutText ? prev.shoutsThrown + 1 : prev.shoutsThrown,
@@ -1871,6 +1917,7 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
       spawnParticlesAtPct,
       triggerShake,
       triggerTankElectrocution,
+      weaponSide,
     ]
   );
 
@@ -2033,8 +2080,17 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
   const baseDummyScale = isTankMode ? 1.0 : 0.62;
 
   // Calculate rotation angle for the SIDE-MOUNTED gun turret aiming horizontally at aimCoords!
-  const mountX = weaponSide === 'right' ? 88 : 12;
-  const mountY = 52;
+  const mountX = isPortraitLayout ? 50 : weaponSide === 'right' ? 88 : 12;
+  const mountY = isPortraitLayout ? 80 : 52;
+  // 세로 배치: 화면 아래 가운데에서 조준점을 향해 회전 (화면 비율 반영)
+  const roomGeo = roomGeometry(isPortraitLayout);
+  const portraitAimDeg =
+    Math.atan2(
+      (aimCoords.y - mountY) * roomGeo.H,
+      (aimCoords.x - mountX) * roomGeo.W
+    ) *
+    (180 / Math.PI);
+  const portraitFlip = Math.abs(portraitAimDeg) > 90;
   const horizontalDist =
     weaponSide === 'right'
       ? Math.max(4, mountX - aimCoords.x)
@@ -2045,7 +2101,7 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
   return (
     <div className="relative w-full h-full overflow-hidden select-none">
       {/* ============================================================
-          3D CARDBOARD / WOODEN BOX PRISON ROOM
+          UNDERGROUND CONCRETE STORAGE ROOM (B2)
          ============================================================ */}
       <div
         ref={arenaRef}
@@ -2058,95 +2114,45 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
       >
         <svg
           className="absolute inset-0 w-full h-full pointer-events-none"
-          viewBox="0 0 1000 600"
+          viewBox={isPortraitLayout ? '0 0 460 1000' : '0 0 1000 600'}
           preserveAspectRatio="none"
         >
-          <defs>
-            <radialGradient id="backWallGrad" cx="50%" cy="48%" r="60%">
-              <stop offset="0%" stopColor="#F0BB78" />
-              <stop offset="65%" stopColor="#D89852" />
-              <stop offset="100%" stopColor="#B56E2E" />
-            </radialGradient>
-            <linearGradient id="leftWallGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#7C3F16" />
-              <stop offset="100%" stopColor="#A85B24" />
-            </linearGradient>
-            <linearGradient id="rightWallGrad" x1="100%" y1="0%" x2="0%" y2="0%">
-              <stop offset="0%" stopColor="#7C3F16" />
-              <stop offset="100%" stopColor="#A85B24" />
-            </linearGradient>
-            <linearGradient id="ceilingGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="#6E3410" />
-              <stop offset="100%" stopColor="#994E1E" />
-            </linearGradient>
-            <linearGradient id="floorGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="#C88746" />
-              <stop offset="100%" stopColor="#8F4E1C" />
-            </linearGradient>
-            <pattern id="corrugated" width="10" height="8" patternUnits="userSpaceOnUse">
-              <rect width="10" height="4" fill="#8C4A19" />
-              <rect y="4" width="10" height="4" fill="#63310C" />
-            </pattern>
-          </defs>
-
-          <polygon points="0,0 1000,0 850,75 150,75" fill="url(#ceilingGrad)" stroke="#5C2B0C" strokeWidth="3" />
-          <polygon points="150,475 850,475 1000,600 0,600" fill="url(#floorGrad)" stroke="#5C2B0C" strokeWidth="3" />
-          <polygon points="0,0 150,75 150,475 0,600" fill="url(#leftWallGrad)" stroke="#5C2B0C" strokeWidth="3" />
-          <polygon points="1000,0 850,75 850,475 1000,600" fill="url(#rightWallGrad)" stroke="#5C2B0C" strokeWidth="3" />
-          <rect x="150" y="75" width="700" height="400" fill="url(#backWallGrad)" stroke="#6E3612" strokeWidth="4" />
-
-          <path
-            d="M 105,120 L 122,220 L 112,330 L 138,440 L 125,470 L 95,340 L 108,210 Z"
-            fill="url(#corrugated)"
-            stroke="#4A2107"
-            strokeWidth="2"
-          />
-          <rect x="92" y="190" width="38" height="14" rx="2" fill="#78716C" stroke="#44403C" strokeWidth="1.5" transform="rotate(14 111 197)" />
-          <rect x="95" y="275" width="40" height="14" rx="2" fill="#78716C" stroke="#44403C" strokeWidth="1.5" transform="rotate(-12 115 282)" />
-          <rect x="102" y="370" width="42" height="14" rx="2" fill="#78716C" stroke="#44403C" strokeWidth="1.5" transform="rotate(-22 123 377)" />
-
-          <path
-            d="M 220,75 L 255,75 L 225,175 L 185,260 L 210,160 Z"
-            fill="url(#corrugated)"
-            stroke="#5C2B0C"
-            strokeWidth="2"
-          />
-
-          <path
-            d="M 605,75 L 675,75 L 690,150 L 718,220 L 705,310 L 680,225 L 650,165 Z"
-            fill="url(#corrugated)"
-            stroke="#5C2B0C"
-            strokeWidth="2"
-          />
-
-          <path
-            d="M 815,355 L 795,430 L 770,475 L 790,475 L 812,430 Z"
-            fill="url(#corrugated)"
-            stroke="#5C2B0C"
-            strokeWidth="2"
-          />
-          <rect x="782" y="395" width="44" height="13" rx="2" fill="#78716C" stroke="#44403C" strokeWidth="1.5" transform="rotate(28 804 401)" />
-          <rect x="768" y="438" width="44" height="13" rx="2" fill="#78716C" stroke="#44403C" strokeWidth="1.5" transform="rotate(22 790 444)" />
-
-          <path
-            d="M 885,155 L 912,240 L 902,380 L 876,435 L 882,300 Z"
-            fill="url(#corrugated)"
-            stroke="#4A2107"
-            strokeWidth="2"
-          />
+          <BasementRoom portrait={isPortraitLayout} />
 
           {/* Faint Laser Sight Line from Side Gun Mount to Crosshair when using Firearms */}
           {!isTankMode && selectedWeapon.category === 'firearms' && (
             <line
-              x1={weaponSide === 'right' ? 840 : 160}
-              y1={312}
-              x2={aimCoords.x * 10}
-              y2={aimCoords.y * 6}
+              x1={(mountX / 100) * roomGeo.W}
+              y1={(mountY / 100) * roomGeo.H}
+              x2={(aimCoords.x / 100) * roomGeo.W}
+              y2={(aimCoords.y / 100) * roomGeo.H}
               stroke="rgba(239, 68, 68, 0.35)"
               strokeWidth="2"
               strokeDasharray="6 6"
             />
           )}
+        </svg>
+
+        {/* 천장에 매달린 백열전구 (비율 고정, 살짝 흔들림) */}
+        <svg
+          className="absolute left-1/2 top-0 -translate-x-1/2 h-[19%] pointer-events-none z-[5]"
+          viewBox="0 0 60 120"
+          overflow="visible"
+        >
+          <g>
+            <animateTransform
+              attributeName="transform"
+              type="rotate"
+              values="-4 30 0; 4 30 0; -4 30 0"
+              dur="5s"
+              repeatCount="indefinite"
+            />
+            <line x1="30" y1="0" x2="30" y2="78" stroke="#111315" strokeWidth="2.5" />
+            <rect x="24" y="76" width="12" height="12" rx="2" fill="#3F3F46" stroke="#111315" strokeWidth="1.5" />
+            <circle cx="30" cy="100" r="30" fill="#FDE68A" opacity="0.18" />
+            <circle cx="30" cy="99" r="12" fill="#FEF3C7" stroke="#B45309" strokeWidth="1.5" />
+            <path d="M 26,96 q 4,6 8,0" fill="none" stroke="#F59E0B" strokeWidth="1.5" />
+          </g>
         </svg>
 
         {/* ============================================================
@@ -2167,7 +2173,7 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
               className={`px-2.5 py-1.5 rounded-2xl text-xs font-extrabold flex items-center gap-1 border-2 shadow-lg transition-all cursor-pointer ${
                 isTankMode
                   ? 'bg-sky-500 border-white text-white'
-                  : 'bg-[#451A03]/90 border-[#92400E] text-sky-300 hover:bg-[#5C2B0C]'
+                  : 'bg-[#1C1E22]/90 border-[#52565C] text-sky-300 hover:bg-[#2A2D32]'
               }`}
             >
               <Droplets className="w-3.5 h-3.5" />
@@ -2188,7 +2194,7 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
               className={`px-2.5 py-1.5 rounded-2xl text-xs font-extrabold flex items-center gap-1 border-2 shadow-lg transition-all cursor-pointer ${
                 mouthSeal !== 'none'
                   ? 'bg-blue-600 border-white text-white'
-                  : 'bg-[#451A03]/90 border-[#92400E] text-amber-200 hover:bg-[#5C2B0C]'
+                  : 'bg-[#1C1E22]/90 border-[#52565C] text-amber-200 hover:bg-[#2A2D32]'
               }`}
             >
               <Lock className="w-3.5 h-3.5" />
@@ -2210,7 +2216,7 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
             <button
               type="button"
               onClick={onToggleMute}
-              className="p-2 rounded-2xl bg-[#451A03]/90 border-2 border-[#92400E] text-amber-200 shadow-lg cursor-pointer"
+              className="p-2 rounded-2xl bg-[#1C1E22]/90 border-2 border-[#52565C] text-amber-200 shadow-lg cursor-pointer"
             >
               {isMuted ? (
                 <VolumeX className="w-4 h-4 text-rose-400" />
@@ -2222,7 +2228,7 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
             <button
               type="button"
               onClick={onToggleLang}
-              className="px-2.5 py-1.5 rounded-2xl bg-[#451A03]/90 hover:bg-[#5C2B0C] border-2 border-amber-400/80 text-xs font-black text-amber-200 flex items-center gap-1 shadow-lg cursor-pointer"
+              className="px-2.5 py-1.5 rounded-2xl bg-[#1C1E22]/90 hover:bg-[#2A2D32] border-2 border-amber-400/80 text-xs font-black text-amber-200 flex items-center gap-1 shadow-lg cursor-pointer"
               title="한국어 / English 전환"
             >
               <Globe className="w-3.5 h-3.5 text-amber-300" />
@@ -2264,7 +2270,7 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
 
           {/* Right: Volatile Name Tag + Shout Input Toggle + Reset */}
           <div className="flex items-center gap-1.5">
-            <div className="flex items-center gap-1.5 bg-[#451A03]/90 border-2 border-[#92400E] px-2.5 py-1.5 rounded-2xl shadow-lg">
+            <div className="flex items-center gap-1.5 bg-[#1C1E22]/90 border-2 border-[#52565C] px-2.5 py-1.5 rounded-2xl shadow-lg">
               <Tag className="w-3.5 h-3.5 text-amber-300 shrink-0" />
               {isEditingName ? (
                 <input
@@ -2321,7 +2327,7 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
             <button
               type="button"
               onClick={handleResetDummy}
-              className="px-2.5 py-1.5 rounded-2xl bg-[#451A03]/90 hover:bg-stone-800 border-2 border-[#92400E] text-xs font-extrabold text-emerald-300 flex items-center gap-1 shadow-lg cursor-pointer"
+              className="px-2.5 py-1.5 rounded-2xl bg-[#1C1E22]/90 hover:bg-stone-800 border-2 border-[#52565C] text-xs font-extrabold text-emerald-300 flex items-center gap-1 shadow-lg cursor-pointer"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span className="hidden md:inline">
@@ -2336,7 +2342,7 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
           <div
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
-            className="absolute top-14 left-1/2 -translate-x-1/2 z-40 bg-[#291509]/95 border-2 border-amber-500 p-3 rounded-2xl shadow-2xl flex flex-col gap-2 w-[92%] max-w-xl pointer-events-auto"
+            className="absolute top-14 left-1/2 -translate-x-1/2 z-40 bg-[#16181B]/95 border-2 border-amber-500 p-3 rounded-2xl shadow-2xl flex flex-col gap-2 w-[92%] max-w-xl pointer-events-auto"
           >
             <div className="flex gap-2">
               <input
@@ -2802,19 +2808,30 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
 
             {/* Side-Mounted Weapon (Right or Left Side of the Horizontal Screen!) */}
             <div
-              className={`absolute top-[52%] -translate-y-1/2 pointer-events-none z-35 transition-transform duration-75 ${
-                weaponSide === 'right' ? 'right-2 sm:right-5' : 'left-2 sm:left-5'
+              className={`absolute pointer-events-none z-35 transition-transform duration-75 ${
+                isPortraitLayout
+                  ? 'left-1/2 top-[80%]'
+                  : `top-[52%] -translate-y-1/2 ${weaponSide === 'right' ? 'right-2 sm:right-5' : 'left-2 sm:left-5'}`
               }`}
-              style={{
-                transform: `translate(${
-                  isFiringRecoil
-                    ? weaponSide === 'right'
-                      ? '16px'
-                      : '-16px'
-                    : '0px'
-                }, -50%) scaleX(${weaponSide === 'right' ? -1 : 1}) rotate(${sideTurretRotateDeg}deg)`,
-                transformOrigin: 'center center',
-              }}
+              style={
+                isPortraitLayout
+                  ? {
+                      transform: `translate(-50%, -50%) rotate(${portraitAimDeg}deg) translateX(${
+                        isFiringRecoil ? '-14px' : '0px'
+                      }) scaleY(${portraitFlip ? -1 : 1})`,
+                      transformOrigin: 'center center',
+                    }
+                  : {
+                      transform: `translate(${
+                        isFiringRecoil
+                          ? weaponSide === 'right'
+                            ? '16px'
+                            : '-16px'
+                          : '0px'
+                      }, -50%) scaleX(${weaponSide === 'right' ? -1 : 1}) rotate(${sideTurretRotateDeg}deg)`,
+                      transformOrigin: 'center center',
+                    }
+              }
             >
               <div className="relative flex items-center">
                 <HighDetailWeaponSvg
@@ -2828,7 +2845,8 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
               </div>
             </div>
 
-            {/* Quick Side-Switch Button (우측 거치 ↔ 좌측 거치) */}
+            {/* Quick Side-Switch Button (우측 거치 ↔ 좌측 거치) — 세로 배치에서는 숨김 */}
+            {!isPortraitLayout && (
             <button
               type="button"
               onPointerDown={(e) => e.stopPropagation()}
@@ -2836,7 +2854,7 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
                 e.stopPropagation();
                 setWeaponSide((prev) => (prev === 'right' ? 'left' : 'right'));
               }}
-              className={`absolute top-[68%] z-40 px-2.5 py-1 rounded-xl bg-[#291509]/90 hover:bg-[#451A03] border border-amber-500/60 text-[10px] font-extrabold text-amber-200 flex items-center gap-1 shadow-lg cursor-pointer pointer-events-auto ${
+              className={`absolute top-[68%] z-40 px-2.5 py-1 rounded-xl bg-[#16181B]/90 hover:bg-[#2A2D32] border border-amber-500/60 text-[10px] font-extrabold text-amber-200 flex items-center gap-1 shadow-lg cursor-pointer pointer-events-auto ${
                 weaponSide === 'right' ? 'right-3 sm:right-6' : 'left-3 sm:left-6'
               }`}
               title="무기 거치 위치 좌/우 변경"
@@ -2852,8 +2870,42 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
                   : 'Move Right'}
               </span>
             </button>
+            )}
           </>
         )}
+
+        {/* 토마토 / 케이크 투사체 */}
+        {thrownItems.map((t) => (
+          <div
+            key={t.id}
+            className="absolute pointer-events-none z-30 animate-throw-fly"
+            style={
+              {
+                '--fx': `${t.fx}%`,
+                '--fy': `${t.fy}%`,
+                '--tx': `${t.tx}%`,
+                '--ty': `${t.ty}%`,
+              } as React.CSSProperties
+            }
+          >
+            <div className="-translate-x-1/2 -translate-y-1/2 animate-throw-spin">
+              {t.kind === 'tomato' ? (
+                <svg viewBox="0 0 40 40" className="w-14 h-14 drop-shadow-[0_6px_6px_rgba(0,0,0,0.5)]">
+                  <circle cx="20" cy="22" r="15" fill="#EF4444" stroke="#7F1D1D" strokeWidth="2.5" />
+                  <path d="M 11,17 Q 14,11 20,10" fill="none" stroke="#FCA5A5" strokeWidth="3" strokeLinecap="round" />
+                  <path d="M 20,8 L 15,4 M 20,8 L 25,3 M 20,8 L 27,9" stroke="#16A34A" strokeWidth="3" strokeLinecap="round" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 44 40" className="w-16 h-14 drop-shadow-[0_6px_6px_rgba(0,0,0,0.5)]">
+                  <path d="M 4,34 L 40,34 L 40,14 L 4,24 Z" fill="#FDE68A" stroke="#92400E" strokeWidth="2" />
+                  <path d="M 4,29 L 40,21" stroke="#F472B6" strokeWidth="3" />
+                  <path d="M 2,24 Q 8,17 14,21 Q 20,14 26,18 Q 32,10 40,13 L 40,15 L 4,25 Z" fill="#FFFFFF" stroke="#D6D3D1" strokeWidth="1.5" />
+                  <circle cx="31" cy="10" r="4.5" fill="#DC2626" stroke="#7F1D1D" strokeWidth="1.5" />
+                </svg>
+              )}
+            </div>
+          </div>
+        ))}
 
         {/* Active Weapon Impact Flash */}
         {weaponSwing.active && (
@@ -2874,17 +2926,18 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
         {floatingTexts.map((ft) => (
           <div
             key={ft.id}
-            className="absolute pointer-events-none z-40 animate-float-up text-center"
+            className={`absolute pointer-events-none text-center ${ft.isShout ? 'z-50' : 'z-40'}`}
             style={{
               left: `${ft.x}%`,
               top: `${ft.y}%`,
               transform: 'translate(-50%, -50%)',
             }}
           >
+            <div className={ft.isShout ? 'animate-shout-pop' : 'animate-float-up'}>
             <div
               className={`font-display font-extrabold tracking-tight drop-shadow-[0_4px_12px_rgba(0,0,0,0.9)] ${
                 ft.isShout
-                  ? 'text-lg sm:text-xl bg-rose-600 text-white px-3.5 py-1.5 rounded-xl border-2 border-rose-300'
+                  ? 'text-xl sm:text-2xl bg-rose-600 text-white px-4 py-2 rounded-2xl border-[3px] border-rose-200 max-w-[80vw] break-keep shadow-[0_0_24px_rgba(244,63,94,0.7)]'
                   : 'text-xl sm:text-2xl'
               }`}
               style={{ color: ft.isShout ? '#FFFFFF' : ft.color }}
@@ -2896,6 +2949,7 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
                 {ft.subText}
               </div>
             )}
+            </div>
           </div>
         ))}
 
@@ -2928,7 +2982,7 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
               }}
             />
           </div>
-          <span className="-mt-2 px-2 py-0.5 rounded-lg bg-[#291509]/95 border border-amber-500/60 text-[10px] font-extrabold text-amber-200 shadow">
+          <span className="-mt-2 px-2 py-0.5 rounded-lg bg-[#16181B]/95 border border-amber-500/60 text-[10px] font-extrabold text-amber-200 shadow">
             {isKo ? '🔥일기소각·파쇄' : '🔥Burn & Shred'}
           </span>
         </button>
@@ -2941,10 +2995,12 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
           onClick={(e) => e.stopPropagation()}
           className="absolute bottom-2.5 right-3 sm:right-5 z-40 flex items-center gap-2.5 pointer-events-auto"
         >
+          {/* 휴대폰을 세로로 들었을 때만 보이는 "가로로 고정" 버튼 */}
+          {(isPortraitLayout || isRotatedLandscape) && (
           <button
             type="button"
             onClick={onToggleRotateLock}
-            className="px-2.5 py-1.5 rounded-xl bg-[#451A03]/90 border border-[#92400E] text-[11px] font-bold text-amber-200 flex items-center gap-1 shadow-lg cursor-pointer"
+            className="px-2.5 py-1.5 rounded-xl bg-[#1C1E22]/90 border border-[#52565C] text-[11px] font-bold text-amber-200 flex items-center gap-1 shadow-lg cursor-pointer"
           >
             <Smartphone className="w-3.5 h-3.5" />
             <span>
@@ -2957,6 +3013,7 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
                 : 'Rotate'}
             </span>
           </button>
+          )}
 
           {/* Stitched Red Gun Patch Button */}
           <button
