@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { BearFigure, BunnyFigure, CrashDummyFigure, ElectrocutedEars } from './TargetCharacters';
 import { BasementRoom, roomGeometry } from './BasementRoom';
+import { useMissionSystem, MissionHud, ResultOverlay } from './MissionSystem';
 import {
   Flame,
   RotateCcw,
@@ -1011,6 +1012,11 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
     isPanicking: false,
   });
 
+  // 속풀이 완료 결과 화면 (KO 필살기 후)
+  const [showResult, setShowResult] = useState<boolean>(false);
+  const mission = useMissionSystem(showResult || isWeaponBinderOpen);
+  const emitMission = mission.emit;
+
   // 토마토 & 케이크 투척: 번갈아 던지기 + 날아가는 투사체
   const throwToggleRef = useRef<boolean>(false);
   const [thrownItems, setThrownItems] = useState<
@@ -1731,6 +1737,7 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
         if (isTankModeRef.current) {
           setWireTip({ x: 54, y: 58 });
           triggerTankElectrocution(54, 58);
+          emitMission({ type: 'electro' });
           setTimeout(() => setWireTip({ x: 58, y: 42 }), 500);
           return;
         } else {
@@ -1872,6 +1879,15 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
 
       const newCombo = combo + 1;
       setCombo(newCombo);
+      emitMission({
+        type: 'hit',
+        weaponId: customShoutText ? 'shout' : weapon.id,
+        combo: newCombo,
+        sealed:
+          mouthSeal !== 'none' ||
+          weapon.specialEffect === 'seal_tape' ||
+          weapon.specialEffect === 'seal_zipper',
+      });
       if (comboTimerRef.current) window.clearTimeout(comboTimerRef.current);
       comboTimerRef.current = window.setTimeout(() => {
         setCombo(0);
@@ -1931,6 +1947,7 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
       triggerShake,
       triggerTankElectrocution,
       weaponSide,
+      emitMission,
     ]
   );
 
@@ -1976,6 +1993,7 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
         !isElectrocuted
       ) {
         triggerTankElectrocution(clampedX, clampedY);
+        emitMission({ type: 'electro' });
       }
     }
   };
@@ -1991,6 +2009,7 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
     const finalShout = (textToThrow ?? shoutInput).trim();
     if (!finalShout) return;
     applyHitToDummy(physRef.current.x, physRef.current.y, finalShout);
+    emitMission({ type: 'shout' });
     if (!textToThrow) {
       setShoutInput('');
     }
@@ -2023,6 +2042,7 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
     stopAutoFire();
     setIsUltimateActive(true);
     setIsWeaponBinderOpen(false);
+    emitMission({ type: 'ultimate' });
     soundEngine.play('ultimate_blast');
     triggerTankElectrocution(52, 56);
 
@@ -2057,8 +2077,30 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
         triggerNameClearedToast();
       }
       setIsUltimateActive(false);
+      // 필살기가 끝나면 속풀이 완료 결과 화면
+      setShowResult(true);
     }, 1100);
   };
+
+  const handleRestartAll = () => {
+    mission.resetAll();
+    setStats({
+      totalHits: 0,
+      maxCombo: 0,
+      objectsShattered: 0,
+      ultimatesUnleashed: 0,
+      shoutsThrown: 0,
+      papersBurned: 0,
+      papersShredded: 0,
+    });
+    setRageGauge(0);
+    handleResetDummy();
+    setShowResult(false);
+  };
+
+  const topWeaponId = showResult ? mission.topWeaponId() : null;
+  const topWeapon = topWeaponId ? WEAPONS.find((w) => w.id === topWeaponId) : undefined;
+  const topWeaponName = topWeapon ? (isKo ? topWeapon.name : topWeapon.nameEn) : null;
 
   const handleResetDummy = (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -2500,6 +2542,7 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
                 e.stopPropagation();
                 setWireTip({ x: 53, y: 58 });
                 triggerTankElectrocution(53, 58);
+                emitMission({ type: 'electro' });
               }}
               style={{
                 left: `${wireTip.x}%`,
@@ -2933,6 +2976,24 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
           >
             <div className="w-12 h-12 rounded-full bg-amber-400/50 border-2 border-yellow-200" />
           </div>
+        )}
+
+        {/* 단계별 미션 카드 + 성공/실패 연출 */}
+        <MissionHud view={mission.view} isKo={isKo} portrait={isPortraitLayout} />
+
+        {/* 속풀이 완료 결과 화면 */}
+        {showResult && (
+          <ResultOverlay
+            isKo={isKo}
+            stats={stats}
+            topWeaponName={topWeaponName}
+            missionView={mission.view}
+            onContinue={() => {
+              setShowResult(false);
+              soundEngine.play('calm_chime');
+            }}
+            onRestart={handleRestartAll}
+          />
         )}
 
         {/* Floating Impact Words */}
