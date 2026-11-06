@@ -413,6 +413,10 @@ interface DummySandboxProps {
   isMuted: boolean;
   onToggleMute: () => void;
   isRotatedLandscape: boolean;
+  /** 화면을 직접 돌린 각도 (90: 시계 방향, -90: 반시계 방향) */
+  rotationDeg: 0 | 90 | -90;
+  /** 가로 고정 버튼이 켜져 있는지 */
+  isForcedLandscape: boolean;
   /** 세로로 든 휴대폰에서 세로 배치로 보여줄 때 true */
   isPortraitLayout: boolean;
   onToggleRotateLock: () => void;
@@ -944,6 +948,8 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
   isMuted,
   onToggleMute,
   isRotatedLandscape,
+  rotationDeg,
+  isForcedLandscape,
   isPortraitLayout,
   onToggleRotateLock,
   onOpenPaperModal,
@@ -1098,8 +1104,15 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
       const rect = arena.getBoundingClientRect();
 
       if (isRotatedLandscape) {
-        const pctX = ((clientY - rect.top) / rect.height) * 100;
-        const pctY = ((rect.right - clientX) / rect.width) * 100;
+        // 90°: 위쪽이 왼쪽으로 / -90°: 위쪽이 오른쪽으로 눕힌 휴대폰
+        const pctX =
+          rotationDeg === -90
+            ? ((rect.bottom - clientY) / rect.height) * 100
+            : ((clientY - rect.top) / rect.height) * 100;
+        const pctY =
+          rotationDeg === -90
+            ? ((clientX - rect.left) / rect.width) * 100
+            : ((rect.right - clientX) / rect.width) * 100;
         return {
           pctX: Math.max(2, Math.min(98, pctX)),
           pctY: Math.max(2, Math.min(98, pctY)),
@@ -1113,7 +1126,7 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
         };
       }
     },
-    [isRotatedLandscape]
+    [isRotatedLandscape, rotationDeg]
   );
 
   const triggerShake = useCallback((heavy: boolean) => {
@@ -3004,13 +3017,13 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
           >
             <Smartphone className="w-3.5 h-3.5" />
             <span>
-              {isRotatedLandscape
+              {isForcedLandscape
                 ? isKo
-                  ? '90° 가로중'
-                  : '90° Wide'
+                  ? '가로 고정 해제'
+                  : 'Unlock'
                 : isKo
-                ? '가로회전'
-                : 'Rotate'}
+                ? '가로 고정'
+                : 'Lock Wide'}
             </span>
           </button>
           )}

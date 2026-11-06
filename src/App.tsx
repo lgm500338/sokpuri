@@ -26,6 +26,52 @@ export default function App() {
   const [forceLandscape, setForceLandscape] = useState<boolean>(false);
   const [isOrientationFading, setIsOrientationFading] = useState<boolean>(false);
 
+  // 휴대폰 화면 회전 잠금이 켜져 있어도 기울기 센서로 실제 방향을 알아냅니다.
+  //  0 = 세로로 들고 있음, 90 = 왼쪽으로 눕힘(위쪽이 왼쪽), -90 = 오른쪽으로 눕힘
+  const [tiltRotation, setTiltRotation] = useState<0 | 90 | -90>(0);
+  useEffect(() => {
+    let candidate: 0 | 90 | -90 = 0;
+    let candidateSince = 0;
+    let current: 0 | 90 | -90 = 0;
+    const onOrient = (e: DeviceOrientationEvent) => {
+      const beta = e.beta ?? 0; // 앞뒤 기울기
+      const gamma = e.gamma ?? 0; // 좌우 기울기
+      let next: 0 | 90 | -90 | null = null;
+      if (Math.abs(gamma) > 58 && Math.abs(beta) < 40) next = gamma < 0 ? 90 : -90;
+      else if (Math.abs(beta) > 50 && Math.abs(gamma) < 30) next = 0;
+      if (next === null) return; // 책상 위에 눕혀 둔 상태 등 애매하면 유지
+      const now = performance.now();
+      if (next !== candidate) {
+        candidate = next;
+        candidateSince = now;
+        return;
+      }
+      // 0.45초 이상 같은 방향일 때만 전환 (흔들림·깜빡임 방지)
+      if (next !== current && now - candidateSince > 450) {
+        current = next;
+        setTiltRotation(next);
+      }
+    };
+    window.addEventListener('deviceorientation', onOrient);
+
+    // 아이폰은 첫 터치 때 동작·방향 접근 허락을 받아야 센서가 켜집니다.
+    const DOE = (window as unknown as {
+      DeviceOrientationEvent?: { requestPermission?: () => Promise<string> };
+    }).DeviceOrientationEvent;
+    const askPermission = () => {
+      if (DOE && typeof DOE.requestPermission === 'function') {
+        DOE.requestPermission().catch(() => undefined);
+      }
+      window.removeEventListener('pointerdown', askPermission, true);
+    };
+    window.addEventListener('pointerdown', askPermission, true);
+
+    return () => {
+      window.removeEventListener('deviceorientation', onOrient);
+      window.removeEventListener('pointerdown', askPermission, true);
+    };
+  }, []);
+
   useEffect(() => {
     const checkOrientation = () => {
       setIsPortraitScreen(window.innerHeight > window.innerWidth);
@@ -35,7 +81,13 @@ export default function App() {
     return () => window.removeEventListener('resize', checkOrientation);
   }, []);
 
-  const effectiveRotatedLandscape = forceLandscape && isPortraitScreen;
+  // 화면이 세로로 보고될 때만 직접 돌립니다 (화면이 이미 가로면 그대로)
+  const rotationDeg: 0 | 90 | -90 = !isPortraitScreen
+    ? 0
+    : forceLandscape
+    ? 90
+    : tiltRotation;
+  const effectiveRotatedLandscape = rotationDeg !== 0;
   const isPortraitLayout = isPortraitScreen && !effectiveRotatedLandscape;
 
   // 가로 ↔ 세로가 바뀌는 순간 살짝 페이드
@@ -98,7 +150,7 @@ export default function App() {
                 left: '50%',
                 width: '100vh',
                 height: '100vw',
-                transform: 'translate(-50%, -50%) rotate(90deg)',
+                transform: `translate(-50%, -50%) rotate(${rotationDeg}deg)`,
                 transformOrigin: 'center center',
               }
             : {
@@ -117,6 +169,8 @@ export default function App() {
           isMuted={isMuted}
           onToggleMute={handleToggleMute}
           isRotatedLandscape={effectiveRotatedLandscape}
+          rotationDeg={rotationDeg}
+          isForcedLandscape={forceLandscape}
           isPortraitLayout={isPortraitLayout}
           onToggleRotateLock={() => setForceLandscape((prev) => !prev)}
           onOpenPaperModal={() => setActiveModal('paper')}
