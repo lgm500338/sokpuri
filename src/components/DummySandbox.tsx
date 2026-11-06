@@ -2992,8 +2992,8 @@ export const DummySandbox: React.FC<DummySandboxProps> = ({
                     ? '뜨개 토끼'
                     : 'Bunny'
                   : isKo
-                  ? '테스트 더미'
-                  : 'Crash Dummy'}
+                  ? '더미'
+                  : 'Dummy'}
               </span>
             </div>
           </button>
